@@ -33,7 +33,7 @@ class Main extends egret.DisplayObjectContainer
     {
         super();
         this.addEventListener(egret.Event.ADDED_TO_STAGE, this.onAddToStage, this);
-        
+
         window['main'] = this;
     }
 
@@ -81,42 +81,42 @@ class Main extends egret.DisplayObjectContainer
         this.playAudio2();
     }
 
-    private _splitter: ChannelSplitterNode;
-    private _merger: ChannelMergerNode;
+    private leftGain: GainNode;
+    private rightGain: GainNode;
     private async playAudio2()
     {
         let url = "http://127.0.0.1:5064/resource/sounds/boom.mp3";
         let arraybuffer = await this.loadSoundAsync(url);
         let ac = new AudioContext();
         let audioBuffer = await this.decodeAudioBuffer(arraybuffer, ac);
-        // console.error(audioBuffer);
         let source = ac.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(ac.destination);
 
-        var splitter = ac.createChannelSplitter(2);
-        source.connect(splitter);
-        var merger = ac.createChannelMerger(2);
+        // 通道控制
+        let channleNode: ChannelSplitterNode = ac.createChannelSplitter(2);
+        source.connect(channleNode);
 
-        // Reduce the volume of the left channel only
-        var gainNode = ac.createGain();
-        gainNode.gain.setValueAtTime(0.1, ac.currentTime);
-        splitter.connect(gainNode, 0);
+        // 左声道音量控制
+        let gainNodeLeft = ac.createGain();
+        gainNodeLeft.gain.value = 1;
+        channleNode.connect(gainNodeLeft, 0);
+        this.leftGain = gainNodeLeft;
 
-        // Connect the splitter back to the second input of the merger: we
-        // effectively swap the channels, here, reversing the stereo image.
-        gainNode.connect(merger, 0, 1);
-        splitter.connect(merger, 0, 1);
+        // 右声道音量控制
+        let gainNodeRight = ac.createGain();
+        gainNodeRight.gain.value = 1;
+        channleNode.connect(gainNodeRight, 1);
+        this.rightGain = gainNodeRight;
 
-        // Because we have used a ChannelMergerNode, we now have a stereo
-        // MediaStream we can use to pipe the Web Audio graph to WebRTC,
-        // MediaRecorder, etc.
-        merger.connect(ac.destination);
+        // 处理完的两个声音重新合并
+        let mergerNode: ChannelMergerNode = ac.createChannelMerger(2);
+        gainNodeLeft.connect(mergerNode, 0, 0);
+        gainNodeRight.connect(mergerNode, 0, 1);
+
+        // 将合并的声音输出
+        mergerNode.connect(ac.destination);
 
         source.start(0);
-
-        this._splitter = splitter;
-        this._merger = merger;
     }
 
     /**
@@ -124,25 +124,28 @@ class Main extends egret.DisplayObjectContainer
      */
     public changeChannel(flag)
     {
-        // if(flag == 0)
-        // {
-        //     this._splitter.channelInterpretation = "Stereo";
-        // }
-        // else if (flag == 1)
-        // {
-        //     this._splitter.connect(this._merger, 1, 0);
-        // }
-        // else
-        // {
-        //     this._splitter.connect(this._merger, 1, 1);
-        // }
+        let leftVolume = 1;
+        let rightVolume = 1;
+        if (flag == 0)
+        {
+            leftVolume = 0.1;
+        }
+        else if (flag == 1)
+        {
+            rightVolume = 0.1
+        }
+        let _time = 500;
+        let leftGain = this.leftGain.gain;
+        let rightGain = this.rightGain.gain;
+        egret.Tween.get(leftGain).to({ value: leftVolume }, _time);
+        egret.Tween.get(rightGain).to({ value: rightVolume }, _time);
     }
 
     async decodeAudioBuffer(buffer, ctx = null): Promise<any>
     {
         return new Promise((resolve) =>
         {
-            if(!ctx)
+            if (!ctx)
             {
                 ctx = new AudioContext();
             }

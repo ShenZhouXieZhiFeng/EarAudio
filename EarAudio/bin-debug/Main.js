@@ -124,7 +124,7 @@ var Main = (function (_super) {
     };
     Main.prototype.playAudio2 = function () {
         return __awaiter(this, void 0, void 0, function () {
-            var url, arraybuffer, ac, audioBuffer, source, splitter, merger, gainNode;
+            var url, arraybuffer, ac, audioBuffer, source, channleNode, gainNodeLeft, gainNodeRight, mergerNode;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
@@ -138,24 +138,22 @@ var Main = (function (_super) {
                         audioBuffer = _a.sent();
                         source = ac.createBufferSource();
                         source.buffer = audioBuffer;
-                        source.connect(ac.destination);
-                        splitter = ac.createChannelSplitter(2);
-                        source.connect(splitter);
-                        merger = ac.createChannelMerger(2);
-                        gainNode = ac.createGain();
-                        gainNode.gain.setValueAtTime(0.1, ac.currentTime);
-                        splitter.connect(gainNode, 0);
-                        // Connect the splitter back to the second input of the merger: we
-                        // effectively swap the channels, here, reversing the stereo image.
-                        gainNode.connect(merger, 0, 1);
-                        splitter.connect(merger, 0, 1);
-                        // Because we have used a ChannelMergerNode, we now have a stereo
-                        // MediaStream we can use to pipe the Web Audio graph to WebRTC,
-                        // MediaRecorder, etc.
-                        merger.connect(ac.destination);
+                        channleNode = ac.createChannelSplitter(2);
+                        source.connect(channleNode);
+                        gainNodeLeft = ac.createGain();
+                        gainNodeLeft.gain.value = 1;
+                        channleNode.connect(gainNodeLeft, 0);
+                        this.leftGain = gainNodeLeft;
+                        gainNodeRight = ac.createGain();
+                        gainNodeRight.gain.value = 1;
+                        channleNode.connect(gainNodeRight, 1);
+                        this.rightGain = gainNodeRight;
+                        mergerNode = ac.createChannelMerger(2);
+                        gainNodeLeft.connect(mergerNode, 0, 0);
+                        gainNodeRight.connect(mergerNode, 0, 1);
+                        // 将合并的声音输出
+                        mergerNode.connect(ac.destination);
                         source.start(0);
-                        this._splitter = splitter;
-                        this._merger = merger;
                         return [2 /*return*/];
                 }
             });
@@ -165,18 +163,24 @@ var Main = (function (_super) {
      * 0 1 other
      */
     Main.prototype.changeChannel = function (flag) {
-        // if(flag == 0)
-        // {
-        //     this._splitter.channelInterpretation = "Stereo";
+        var leftVolume = 1;
+        var rightVolume = 1;
+        if (flag == 0) {
+            leftVolume = 0.1;
+        }
+        else if (flag == 1) {
+            rightVolume = 0.1;
+        }
+        var _time = 500;
+        // let data = {
+        //     value: 0
         // }
-        // else if (flag == 1)
-        // {
-        //     this._splitter.connect(this._merger, 1, 0);
-        // }
-        // else
-        // {
-        //     this._splitter.connect(this._merger, 1, 1);
-        // }
+        var leftGain = this.leftGain.gain;
+        var rightGain = this.rightGain.gain;
+        egret.Tween.get(leftGain).to({ value: leftVolume }, _time);
+        egret.Tween.get(rightGain).to({ value: rightVolume }, _time);
+        // this.leftGain.gain.value = leftVolume;
+        // this.rightGain.gain.value = rightVolume;
     };
     Main.prototype.decodeAudioBuffer = function (buffer, ctx) {
         if (ctx === void 0) { ctx = null; }
