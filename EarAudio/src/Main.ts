@@ -1,90 +1,31 @@
-//////////////////////////////////////////////////////////////////////////////////////
-//
-//  Copyright (c) 2014-present, Egret Technology.
-//  All rights reserved.
-//  Redistribution and use in source and binary forms, with or without
-//  modification, are permitted provided that the following conditions are met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above copyright
-//       notice, this list of conditions and the following disclaimer in the
-//       documentation and/or other materials provided with the distribution.
-//     * Neither the name of the Egret nor the
-//       names of its contributors may be used to endorse or promote products
-//       derived from this software without specific prior written permission.
-//
-//  THIS SOFTWARE IS PROVIDED BY EGRET AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
-//  OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
-//  OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-//  IN NO EVENT SHALL EGRET AND CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-//  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-//  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;LOSS OF USE, DATA,
-//  OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
-//  LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-//  NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
-//  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-//
-//////////////////////////////////////////////////////////////////////////////////////
+class Main extends egret.DisplayObjectContainer {
 
-class Main extends egret.DisplayObjectContainer
-{
-    public constructor()
-    {
+    private static WIDTH = 1280;
+    private static HEIGHT = 720;
+
+    public constructor() {
         super();
         this.addEventListener(egret.Event.ADDED_TO_STAGE, this.onAddToStage, this);
-
         window['main'] = this;
     }
 
-    private onAddToStage(event: egret.Event)
-    {
-
-        egret.lifecycle.addLifecycleListener((context) =>
-        {
-            // custom lifecycle plugin
-
-            context.onUpdate = () =>
-            {
-
-            }
-        })
-
-        egret.lifecycle.onPause = () =>
-        {
-            egret.ticker.pause();
-        }
-
-        egret.lifecycle.onResume = () =>
-        {
-            egret.ticker.resume();
-        }
-
-        this.runGame().catch(e =>
-        {
-            console.log(e);
-        })
-
+    private onAddToStage(event: egret.Event) {
+        this.runGame();
     }
 
-    private async runGame()
-    {
+    private async runGame() {
         await this.loadResource()
-        this.createGameScene();
-        const result = await RES.getResAsync("description_json")
-        this.startAnimation(result);
         await platform.login();
         const userInfo = await platform.getUserInfo();
-        console.log(userInfo);
-
-        // this.playAudio();
-        this.playAudio2();
+        // console.log(userInfo);
+        this.playAudio();
     }
 
     private leftGain: GainNode;
     private rightGain: GainNode;
-    private async playAudio2()
-    {
+    private audioAnalyser: AnalyserNode;
+    private analyseNode: AnalyserNode;
+    private async playAudio() {
         let url = "http://127.0.0.1:5064/resource/sounds/boom.mp3";
         let arraybuffer = await this.loadSoundAsync(url);
         let ac = new AudioContext();
@@ -114,24 +55,130 @@ class Main extends egret.DisplayObjectContainer
         gainNodeRight.connect(mergerNode, 0, 1);
 
         // 将合并的声音输出
-        mergerNode.connect(ac.destination);
+        // mergerNode.connect(ac.destination);
+
+        // 插入分析器
+        let analyser: AnalyserNode = ac.createAnalyser();
+        this.analyseNode = analyser;
+        this.audioAnalyser = analyser;
+        mergerNode.connect(analyser);
+        analyser.connect(ac.destination);
+        this.setAnalyse();
 
         source.start(0);
+    }
+
+    private analyseDataArray: Uint8Array;
+    private canvasCtx: CanvasRenderingContext2D;
+    private drawCanvas: HTMLCanvasElement;
+
+    private setAnalyse() {
+        let analyseNode = this.analyseNode;
+        // analyseNode.fftSize = 2048; // frame1
+        analyseNode.fftSize = 256; // frame2
+        let bufferLength = analyseNode.frequencyBinCount;
+        let dataArray = new Uint8Array(bufferLength);
+        this.analyseDataArray = dataArray;
+
+        let eCanvas = document.getElementsByTagName("canvas")[0];
+        var drawCanvas: HTMLCanvasElement = document.createElement("canvas");
+        drawCanvas.width = Main.WIDTH;
+        drawCanvas.height = Main.HEIGHT;
+        this.drawCanvas = drawCanvas;
+        eCanvas.parentElement.appendChild(drawCanvas);
+        let contex: CanvasRenderingContext2D = drawCanvas.getContext("2d");
+        this.canvasCtx = contex;
+
+        console.error(contex);
+    }
+
+    private beginDraw()
+    {
+        let timer = new egret.Timer(100, 0);
+        timer.addEventListener(egret.TimerEvent.TIMER, this.analyseFrame2, this);
+        timer.addEventListener(egret.TimerEvent.TIMER, this.analyseFrame1, this);
+        timer.start();
+        // this.addEventListener(egret.Event.ENTER_FRAME, this.analyseFrame1, this);
+    }
+
+    private analyseFrame2()
+    {
+        let analyseNode = this.analyseNode;
+        let dataArray = this.analyseDataArray;
+        let bufferSize = dataArray.length;
+
+        let ctx = this.canvasCtx;
+        let width = this.drawCanvas.width;
+        let height = this.drawCanvas.height;
+        ctx.clearRect(0, 0, width, height);
+
+        analyseNode.getByteTimeDomainData(dataArray);
+        
+        let barWidth = (Main.WIDTH / bufferSize) * 2.5;
+        let barHeight;
+        let x = 0;
+        for(let i = 0; i < bufferSize; i ++)
+        {
+            barHeight = dataArray[i] / 2 + 100;
+            ctx.fillStyle = 'rgb(' + (barHeight * 10) +',50,50)';
+            ctx.fillRect(x, Main.HEIGHT - barHeight / 2, barWidth, barHeight);
+
+            x += barWidth + 1;
+        }
+
+        ctx.stroke();
+    }
+
+    private analyseFrame1() {
+        let analyseNode = this.analyseNode;
+        let dataArray = this.analyseDataArray;
+        let bufferSize = dataArray.length;
+
+        let ctx = this.canvasCtx;
+        let width = this.drawCanvas.width;
+        let height = this.drawCanvas.height;
+        // ctx.clearRect(0, 0, width, height);
+        ctx.fillStyle = 'rgb(200,200,200)';
+        // ctx.fillRect(0, 0, width, height);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgb(0,0,0)';
+        ctx.beginPath();
+
+        analyseNode.getByteTimeDomainData(dataArray);
+        
+        let x = 0;
+        let sliceWidth = width * 1.0 / bufferSize;
+        for(let i = 0;i < bufferSize; i ++)
+        {
+            let v = dataArray[i] / 128.0;
+            let y = v * height / 2;
+
+            if(i === 0)
+            {
+                ctx.moveTo(x,y);
+            }
+            else
+            {
+                ctx.lineTo(x,y);
+            }
+
+            x += sliceWidth;
+        }
+
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
     }
 
     /**
      * 0 1 other
      */
-    public changeChannel(flag)
-    {
+    public changeChannel(flag) {
         let leftVolume = 1;
         let rightVolume = 1;
-        if (flag == 0)
-        {
+        if (flag == 0) {
             leftVolume = 0.1;
         }
-        else if (flag == 1)
-        {
+        else if (flag == 1) {
             rightVolume = 0.1
         }
         let _time = 500;
@@ -141,163 +188,39 @@ class Main extends egret.DisplayObjectContainer
         egret.Tween.get(rightGain).to({ value: rightVolume }, _time);
     }
 
-    async decodeAudioBuffer(buffer, ctx = null): Promise<any>
-    {
-        return new Promise((resolve) =>
-        {
-            if (!ctx)
-            {
+    async decodeAudioBuffer(buffer, ctx = null): Promise<any> {
+        return new Promise((resolve) => {
+            if (!ctx) {
                 ctx = new AudioContext();
             }
-            ctx.decodeAudioData(buffer, (audioBuffer) =>
-            {
+            ctx.decodeAudioData(buffer, (audioBuffer) => {
                 resolve(audioBuffer);
             })
         })
     }
 
-    async loadSoundAsync(url): Promise<any>
-    {
-        return new Promise((resolve) =>
-        {
+    async loadSoundAsync(url): Promise<any> {
+        return new Promise((resolve) => {
             let req = new XMLHttpRequest();
             req.open('GET', url, true);
             req.responseType = "arraybuffer";
-            req.onload = () =>
-            {
+            req.onload = () => {
                 resolve(req.response);
             }
             req.send();
         })
     }
 
-    private async playAudio()
-    {
-        // let resName = ResConfig.sound_boom;
-        // await RES.getResAsync(resName);
-        // let channel: egret.SoundChannel;
-        // let sound: egret.Sound = RES.getRes(resName);
-        // console.error(sound);
-        // channel = sound.play(0, 0);
-    }
-
-    private async loadResource()
-    {
-        try
-        {
+    private async loadResource() {
+        try {
             const loadingView = new LoadingUI();
             this.stage.addChild(loadingView);
             await RES.loadConfig("resource/default.res.json", "resource/");
             await RES.loadGroup("preload", 0, loadingView);
             this.stage.removeChild(loadingView);
         }
-        catch (e)
-        {
+        catch (e) {
             console.error(e);
         }
-    }
-
-    private textfield: egret.TextField;
-
-    /**
-     * 创建游戏场景
-     * Create a game scene
-     */
-    private createGameScene()
-    {
-        let sky = this.createBitmapByName("bg_jpg");
-        this.addChild(sky);
-        let stageW = this.stage.stageWidth;
-        let stageH = this.stage.stageHeight;
-        sky.width = stageW;
-        sky.height = stageH;
-
-        let topMask = new egret.Shape();
-        topMask.graphics.beginFill(0x000000, 0.5);
-        topMask.graphics.drawRect(0, 0, stageW, 172);
-        topMask.graphics.endFill();
-        topMask.y = 33;
-        this.addChild(topMask);
-
-        let icon = this.createBitmapByName("egret_icon_png");
-        this.addChild(icon);
-        icon.x = 26;
-        icon.y = 33;
-
-        let line = new egret.Shape();
-        line.graphics.lineStyle(2, 0xffffff);
-        line.graphics.moveTo(0, 0);
-        line.graphics.lineTo(0, 117);
-        line.graphics.endFill();
-        line.x = 172;
-        line.y = 61;
-        this.addChild(line);
-
-
-        let colorLabel = new egret.TextField();
-        colorLabel.textColor = 0xffffff;
-        colorLabel.width = stageW - 172;
-        colorLabel.textAlign = "center";
-        colorLabel.text = "Hello Egret";
-        colorLabel.size = 24;
-        colorLabel.x = 172;
-        colorLabel.y = 80;
-        this.addChild(colorLabel);
-
-        let textfield = new egret.TextField();
-        this.addChild(textfield);
-        textfield.alpha = 0;
-        textfield.width = stageW - 172;
-        textfield.textAlign = egret.HorizontalAlign.CENTER;
-        textfield.size = 24;
-        textfield.textColor = 0xffffff;
-        textfield.x = 172;
-        textfield.y = 135;
-        this.textfield = textfield;
-    }
-
-    /**
-     * 根据name关键字创建一个Bitmap对象。name属性请参考resources/resource.json配置文件的内容。
-     * Create a Bitmap object according to name keyword.As for the property of name please refer to the configuration file of resources/resource.json.
-     */
-    private createBitmapByName(name: string)
-    {
-        let result = new egret.Bitmap();
-        let texture: egret.Texture = RES.getRes(name);
-        result.texture = texture;
-        return result;
-    }
-
-    /**
-     * 描述文件加载成功，开始播放动画
-     * Description file loading is successful, start to play the animation
-     */
-    private startAnimation(result: string[])
-    {
-        let parser = new egret.HtmlTextParser();
-
-        let textflowArr = result.map(text => parser.parse(text));
-        let textfield = this.textfield;
-        let count = -1;
-        let change = () =>
-        {
-            count++;
-            if (count >= textflowArr.length)
-            {
-                count = 0;
-            }
-            let textFlow = textflowArr[count];
-
-            // 切换描述内容
-            // Switch to described content
-            textfield.textFlow = textFlow;
-            let tw = egret.Tween.get(textfield);
-            tw.to({ "alpha": 1 }, 200);
-            tw.wait(2000);
-            tw.to({ "alpha": 0 }, 200);
-            tw.call(change, this);
-        };
-
-        change();
     }
 }
